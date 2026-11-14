@@ -61,5 +61,15 @@ if cache_has_items; then pass "stale lock is broken"; else fail "stale lock bloc
 if [[ ! -d "$alfred_workflow_cache/index.lockdir" ]]; then pass "lock released on exit"; else fail "lock dir left behind"; fi
 teardown
 
+# 5. Type comes from the content key; an alias indexes its address as the login.
+setup
+"$INDEX" --force
+got="$(python3 -c 'import json,sys
+d={i["id"]:i for i in json.load(open(sys.argv[1]))["items"]}
+print(d["-item2"]["item_type"], d["-item2"]["login"])' "$alfred_workflow_cache/index.json")"
+if [[ "$got" == "alias shop@alias.test" ]]; then pass "alias type and address indexed"; else fail "alias indexed as: $got"; fi
+if grep -q -- '--share-id=s1' "$FAKE_DIR/calls.log"; then pass "IDs passed as --flag=value"; else fail "IDs not passed as --flag=value"; fi
+teardown
+
 echo
 if (( fails == 0 )); then echo "index.sh: all tests passed"; else echo "index.sh: $fails test(s) FAILED"; exit 1; fi

@@ -34,6 +34,19 @@
 				<false/>
 			</dict>
 		</array>
+		<key>9a3e6c1f-5b2d-4f8e-a7c0-3d1b2e4f6a80</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>4c7d2e9b-1a6f-4e3c-b8d5-0f2a9c1e7b64</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
 	</dict>
 	<key>createdby</key>
 	<string>Sebastian Krupa</string>
@@ -163,6 +176,50 @@
 			<key>version</key>
 			<integer>2</integer>
 		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>argumenttype</key>
+				<integer>2</integer>
+				<key>keyword</key>
+				<string>pprefresh</string>
+				<key>subtext</key>
+				<string>Re-index your Proton Pass items now</string>
+				<key>text</key>
+				<string>Refresh Proton Pass index</string>
+				<key>withspace</key>
+				<false/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.input.keyword</string>
+			<key>uid</key>
+			<string>9a3e6c1f-5b2d-4f8e-a7c0-3d1b2e4f6a80</string>
+			<key>version</key>
+			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>0</integer>
+				<key>script</key>
+				<string>./scripts/refresh.sh</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>4c7d2e9b-1a6f-4e3c-b8d5-0f2a9c1e7b64</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
 	</array>
 	<key>readme</key>
 	<string>Proton Pass for Alfred
@@ -178,11 +235,18 @@ Keywords:
                  ⌥⏎ copy TOTP code
                  ⌃⏎ open first URL in browser
                  ⇧⏎ show item details (no secrets revealed)
+               Cards: ⏎ card number, ⌘⏎ CVV. Wi-Fi: ⏎ password.
+               Aliases: ⏎ alias address. Custom: ⏎ first field.
+               Notes, identities, SSH keys: ⏎ details.
+               Empty query lists recently copied items first.
+               A just-copied item stays on top for 30s (PP_PIN_SECONDS).
   ppgen N      Generate a random N-character password (default 20) and copy
+  pprefresh    Re-index items now (e.g. after adding one)
 
 Workflow variables:
   PP_CACHE_TTL    Seconds before re-indexing items (default 300)
   PP_LIST_TIMEOUT Seconds allowed per vault when listing items (default 60)
+  PP_PIN_SECONDS  Seconds a just-copied item stays on top (default 30; 0 = off)
   PP_CLIP_CLEAR   Seconds before auto-clearing the clipboard (default 45; 0 = never)
 </string>
 	<key>uidata</key>
@@ -215,6 +279,20 @@ Workflow variables:
 			<key>ypos</key>
 			<integer>180</integer>
 		</dict>
+		<key>9a3e6c1f-5b2d-4f8e-a7c0-3d1b2e4f6a80</key>
+		<dict>
+			<key>xpos</key>
+			<integer>40</integer>
+			<key>ypos</key>
+			<integer>320</integer>
+		</dict>
+		<key>4c7d2e9b-1a6f-4e3c-b8d5-0f2a9c1e7b64</key>
+		<dict>
+			<key>xpos</key>
+			<integer>280</integer>
+			<key>ypos</key>
+			<integer>320</integer>
+		</dict>
 	</dict>
 	<key>variables</key>
 	<dict>
@@ -224,6 +302,8 @@ Workflow variables:
 		<string>60</string>
 		<key>PP_CLIP_CLEAR</key>
 		<string>45</string>
+		<key>PP_PIN_SECONDS</key>
+		<string>30</string>
 	</dict>
 	<key>variablesdontexport</key>
 	<array/>

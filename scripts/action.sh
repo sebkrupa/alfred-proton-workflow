@@ -2,7 +2,7 @@
 # Dispatch an Alfred action against a Proton Pass item.
 # Receives one argument: ACTION|SHARE_ID|ITEM_ID|TITLE
 #
-# ACTION ∈ {password, username, totp, url, details, login}
+# ACTION ∈ {password, username, totp, url, details, login, card, cvv, alias, custom}
 
 set -euo pipefail
 
@@ -11,6 +11,71 @@ source "$(dirname "$0")/lib.sh"
 
 arg="${1:-}"
 IFS='|' read -r action share_id item_id title <<<"$arg"
+# `--flag=value`: an ID that starts with "-" is otherwise read as a flag.
+ids=(--share-id="$share_id" --item-id="$item_id")
+
+# Put this item first in the empty-query `pp` list. IDs only, never values.
+remember() {
+  local dir="${alfred_workflow_cache:-$(dirname "$0")/../cache}" f
+  f="$dir/recent.txt"
+  [[ "$item_id" =~ ^[A-Za-z0-9_=-]+$ ]] || return 0
+  (
+    umask 077
+    mkdir -p "$dir"
+    { printf '%s\n' "$item_id"; grep -vxF -- "$item_id" "$f" 2>/dev/null | head -n 49; } >"$f.tmp" &&
+      mv "$f.tmp" "$f"
+  ) || true
+}
+
+# Copy one named field of the item. $1 = field, $2 = label for the notification.
+# Returns 1 (no notification) when the field is missing or empty.
+copy_field() {
+  local value
+  value="$(pass-cli item view "${ids[@]}" --field "$1" 2>/dev/null)" && [[ -n "$value" ]] || return 1
+  copy_transient "$value"
+  remember
+  notify "Proton Pass" "$2 for $title copied (clears in ${CLIP_CLEAR_SECONDS}s)"
+}
+
+# Copy a value found in the item's JSON. $1 = alias (the alias address) or
+# secret (first Hidden field, else first Text field, across custom sections
+# and extra fields — e.g. an API token item without a password).
+copy_from_json() {
+  local json found
+  json="$(pass-cli item view "${ids[@]}" --output json 2>&1)" || {
+    notify "Proton Pass" "Could not read item: $json"
+    return 0
+  }
+  # Script via -c, JSON via stdin. Prints "<label>\n<value>" or nothing.
+  found="$(printf '%s' "$json" | /usr/bin/python3 -I -c '
+import json, sys
+try:
+    item = json.load(sys.stdin)["item"]
+    if sys.argv[1] == "alias":
+        if item.get("alias_email"):
+            print("Alias address"); print(item["alias_email"])
+        sys.exit()
+    c = item["content"]
+    fields = []
+    for sec in ((c.get("content") or {}).get("Custom") or {}).get("sections") or []:
+        fields += sec.get("section_fields") or []
+    fields += c.get("extra_fields") or []
+    for kind in ("Hidden", "Text"):
+        for f in fields:
+            v = (f.get("content") or {}).get(kind)
+            if v:
+                print(f.get("name") or "Secret"); print(v); sys.exit()
+except Exception:
+    pass
+' "$1")" || found=""
+  if [[ -n "$found" ]]; then
+    copy_transient "${found#*$'\n'}"
+    remember
+    notify "Proton Pass" "${found%%$'\n'*} of $title copied (clears in ${CLIP_CLEAR_SECONDS}s)"
+  else
+    notify "Proton Pass" "Nothing to copy on $title"
+  fi
+}
 
 case "$action" in
   login)
@@ -47,22 +112,22 @@ SH
     exit 0
     ;;
 
-  password)
-    if value="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --field password 2>&1)"; then
-      copy_transient "$value"
-      notify "Proton Pass" "Password for $title copied (clears in ${CLIP_CLEAR_SECONDS}s)"
-    else
-      notify "Proton Pass" "Could not read password: $value"
-    fi
-    ;;
+  # Items without a password (API token, custom item) fall back to their first secret field.
+  password) copy_field password "Password" || copy_from_json secret ;;
+  card)     copy_field number "Card number" || notify "Proton Pass" "No card number on $title" ;;
+  cvv)      copy_field verification_number "CVV" || notify "Proton Pass" "No CVV on $title" ;;
+  alias)    copy_from_json alias ;;
+  custom)   copy_from_json secret ;;
 
   username)
     # Try the `username` field, fall back to `email`.
-    if value="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --field username 2>/dev/null)" && [[ -n "$value" ]]; then
+    if value="$(pass-cli item view "${ids[@]}" --field username 2>/dev/null)" && [[ -n "$value" ]]; then
       copy_transient "$value"
+      remember
       notify "Proton Pass" "Username for $title copied"
-    elif value="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --field email 2>/dev/null)" && [[ -n "$value" ]]; then
+    elif value="$(pass-cli item view "${ids[@]}" --field email 2>/dev/null)" && [[ -n "$value" ]]; then
       copy_transient "$value"
+      remember
       notify "Proton Pass" "Email for $title copied"
     else
       notify "Proton Pass" "No username or email on $title"
@@ -70,10 +135,11 @@ SH
     ;;
 
   totp)
-    if value="$(pass-cli item totp --share-id "$share_id" --item-id "$item_id" --output json 2>&1)"; then
+    if value="$(pass-cli item totp "${ids[@]}" --output json 2>&1)"; then
       code="$(printf '%s' "$value" | /usr/bin/python3 -c 'import json,sys;d=json.load(sys.stdin);print((d.get("totp") or d.get("code") or list(d.values())[0]) if isinstance(d, dict) else d)')" || code=""
       if [[ -n "$code" ]]; then
         copy_transient "$code"
+        remember
         notify "Proton Pass" "TOTP for $title copied"
       else
         notify "Proton Pass" "No TOTP configured on $title"
@@ -84,7 +150,7 @@ SH
     ;;
 
   url)
-    json="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --output json 2>&1)" || {
+    json="$(pass-cli item view "${ids[@]}" --output json 2>&1)" || {
       notify "Proton Pass" "Could not read item"
       exit 0
     }
@@ -101,6 +167,7 @@ except Exception:
     # or a custom URL scheme that `open` would launch.
     if [[ "$url" =~ ^https?://[^[:space:]]+$ ]]; then
       /usr/bin/open "$url"
+      remember
     elif [[ -n "$url" ]]; then
       notify "Proton Pass" "Refusing to open non-http(s) URL on $title"
     else
@@ -109,7 +176,7 @@ except Exception:
     ;;
 
   details)
-    json="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --output json 2>&1)" || {
+    json="$(pass-cli item view "${ids[@]}" --output json 2>&1)" || {
       notify "Proton Pass" "Could not read item"
       exit 0
     }
@@ -135,10 +202,18 @@ try:
         for u in L.get("urls", []): lines.append(f"URL: {u}")
     elif "Note" in inner:
         lines.append("Type: note")
+    elif "Alias" in inner:
+        lines.append("Alias: " + (item.get("alias_email") or "?"))
+    elif "Wifi" in inner:
+        W = inner["Wifi"] or {}
+        if W.get("ssid"):     lines.append("SSID: " + W["ssid"])
+        if W.get("password"): lines.append("Password: " + "•" * 12)
     elif "CreditCard" in inner:
         C = inner["CreditCard"]
         if C.get("cardholder_name"): lines.append("Holder: " + C["cardholder_name"])
         if C.get("number"): lines.append("Number: •••• " + C["number"][-4:])
+    for f in content.get("extra_fields") or []:
+        if f.get("name"): lines.append("Field: " + f["name"] + " (hidden)")
     if note:
         lines.append("")
         lines.append("Note: present (hidden, may contain secrets)")
