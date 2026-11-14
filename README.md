@@ -26,6 +26,13 @@ Hardened fork of [`jagajaga/alfred-proton-pass`](https://github.com/jagajaga/alf
 
 UX modeled after [`chrisgrieser/alfred-pass`](https://github.com/chrisgrieser/alfred-pass) — same keyword + modifier-key feel, ported to the Proton Pass backend.
 
+## Requirements
+
+- macOS with [Alfred 5](https://www.alfredapp.com/) and the Powerpack (workflows need it).
+- `python3` — the one from Apple's Command Line Tools (`xcode-select --install`)
+  is enough; no extra packages.
+- The Proton Pass CLI (`pass-cli`), installed below.
+
 ## Install
 
 1. Install the Proton Pass CLI and sign in:
@@ -35,7 +42,14 @@ UX modeled after [`chrisgrieser/alfred-pass`](https://github.com/chrisgrieser/al
    pass-cli login
    ```
 
-2. Build **Proton Pass (safe).alfredworkflow** (see [Building from source](#building-from-source)) and double-click it.
+2. Download **Proton Pass (safe).alfredworkflow** from the
+   [latest release](https://github.com/sebkrupa/alfred-proton-workflow/releases/latest)
+   (or [build it from source](#building-from-source)) and double-click it.
+3. Optional, but recommended: turn on Alfred's query history — see
+   [Recommended for quick retrieval of login/password](#recommended-for-quick-retrieval-of-loginpassword).
+
+To update, double-click the newer `.alfredworkflow`; Alfred offers to update
+the installed one in place.
 
 ### Staying logged in
 
@@ -98,18 +112,51 @@ pass-cli vault list --output json \
 
 | Keyword | What it does |
 |---|---|
-| `pp <query>` | Search items across all your vaults (matches title and login) |
+| `pp <query>` | Search items across all your vaults (matches title, login and URL) |
 | `ppgen [length]` | Generate a random password (default length 20) and copy |
+| `pprefresh` | Re-index items now (e.g. right after adding one) |
 
 Inside the `pp` results:
 
 | Key | Action |
 |---|---|
-| <kbd>↩</kbd> | Copy **password** (clipboard auto-clears after 45 s) |
+| <kbd>↩</kbd> | Copy **password**, or the first secret field if there is none (clipboard auto-clears after 45 s) |
 | <kbd>⌘</kbd><kbd>↩</kbd> | Copy **username/email** |
 | <kbd>⌥</kbd><kbd>↩</kbd> | Copy **TOTP code** |
 | <kbd>⌃</kbd><kbd>↩</kbd> | Open the item's first **URL** |
 | <kbd>⇧</kbd><kbd>↩</kbd> | Show item **details** (password masked) |
+
+Hold the modifier key before pressing <kbd>↩</kbd>; the item's subtitle
+changes to show what that key will do.
+
+The keys above are for logins. Other item types get their own primary action:
+
+| Type | <kbd>↩</kbd> | <kbd>⌘</kbd><kbd>↩</kbd> |
+|---|---|---|
+| Credit card | Copy card **number** | Copy **CVV** |
+| Wi-Fi | Copy **password** | — |
+| Alias | Copy **alias address** | — |
+| Custom (e.g. API token) | Copy first hidden field (else first text field) | — |
+| Note, identity, SSH key | Show **details** | — |
+
+With an empty query, `pp` lists the items you copied from most recently first.
+Only item IDs are kept for that (`recent.txt` in the workflow cache, user-only).
+
+For 30 seconds after a copy (`PP_PIN_SECONDS`), the copied item is pinned to
+the top of any `pp` result it appears in.
+
+### Recommended for quick retrieval of login/password
+
+In Alfred → Preferences → **Advanced** → *History*, turn on **Store typed
+query** and **Show latest query if within 5 minutes**:
+
+<img src="docs/alfred-history-setting.png" width="500" alt="Alfred Advanced → History: Store typed query and Show latest query if within 5 minutes, both checked" />
+
+Then copy the password with <kbd>↩</kbd>, press your Alfred hotkey again, and
+the same `pp` query reopens with that item still selected — press
+<kbd>⌘</kbd><kbd>↩</kbd> for the username (or <kbd>↩</kbd> to copy the password
+again). The 5-minute window is Alfred's and applies to all of Alfred, not only
+this workflow.
 
 ### Search
 
@@ -137,6 +184,8 @@ Workflow variables (Alfred → Workflows → Proton Pass → `[𝗑]`):
 - `PP_LIST_TIMEOUT` — seconds allowed per vault when listing items (default `60`).
   Large vaults can be slow to enrich with usernames; if a vault exceeds this, the
   workflow falls back to a fast title-only listing for it rather than dropping it.
+- `PP_PIN_SECONDS` — seconds a just-copied item stays pinned to the top of results
+  (default `30`; `0` disables).
 - `PP_CLIP_CLEAR` — seconds before the workflow clears the clipboard
   (default `45`; `0` disables). Clearing only happens if the clipboard still
   holds the value the workflow put there.
@@ -156,12 +205,16 @@ details view, and keeps the cache readable by your user only.
    vault, **strips passwords / TOTP URIs / passkeys**, and merges the results
    into `cache/index.json`. The cache contains only non-secret metadata
    (titles, usernames/emails, URLs).
-2. `scripts/filter.py` reads the cache, scores titles + logins against your
-   query, and emits the Alfred Script Filter JSON with modifier-key variants.
+2. `scripts/filter.py` reads the cache, scores titles, logins and URLs against
+   your query, and emits the Alfred Script Filter JSON with modifier-key
+   variants chosen per item type.
 3. `scripts/action.sh` is the dispatcher. It decodes the
    `ACTION|SHARE_ID|ITEM_ID|TITLE` payload from the chosen item and calls
    `pass-cli item view --field …` or `pass-cli item totp` to fetch exactly the
-   value being copied.
+   value being copied. After a copy it records the item ID (never the value)
+   in `recent.txt`, which drives the recent-first list and the 30-second pin.
+4. `scripts/refresh.sh` (`pprefresh`) runs `index.sh --force` and reports how
+   many items were indexed.
 
 Actual secrets are **never** written to disk by this workflow — every
 copy / TOTP / open-URL action fetches the value live from `pass-cli`.
@@ -175,6 +228,8 @@ zip -r "Proton Pass (safe).alfredworkflow" \
 ```
 
 Drop the resulting `Proton Pass (safe).alfredworkflow` into Alfred.
+
+Run the tests with `tests/run.sh` (uses a fake `pass-cli`, no account needed).
 
 ## License
 

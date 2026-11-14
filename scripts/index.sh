@@ -134,6 +134,12 @@ vaults = json.loads(sys.argv[1]).get("vaults", [])
 
 vault_by_share = {v["share_id"]: v["name"] for v in vaults}
 
+# The single key under content.content names the item type.
+TYPE_KEYS = {
+    "Login": "login", "Alias": "alias", "Note": "note", "CreditCard": "credit-card",
+    "Identity": "identity", "SshKey": "ssh-key", "Wifi": "wifi", "Custom": "custom",
+}
+
 all_items = []
 errors = []
 
@@ -146,7 +152,8 @@ for v in vaults:
         # it times out or is rejected (e.g. an agent session), fall back to the
         # fast plain listing — the vault's items still get indexed, just without
         # login/url enrichment. Only a genuinely failed vault becomes a warning.
-        base = ["pass-cli", "item", "list", "--share-id", share_id, "--output", "json"]
+        # `--flag=value`: an ID that starts with "-" is otherwise read as a flag.
+        base = ["pass-cli", "item", "list", f"--share-id={share_id}", "--output", "json"]
         res = None
         try:
             res = subprocess.run(base + ["--show-secrets"],
@@ -181,19 +188,18 @@ for v in vaults:
                 if isinstance(content, dict):
                     title = content.get("title") or title
                     inner = content.get("content")
-                    if isinstance(inner, dict):
+                    if isinstance(inner, dict) and inner:
+                        item_type = TYPE_KEYS.get(next(iter(inner)), item_type)
                         L = inner.get("Login")
-                        A = inner.get("Alias")
                         if isinstance(L, dict):
-                            item_type = item_type or "login"
                             login_email = L.get("email") or ""
                             login_username = L.get("username") or ""
                             urls = L.get("urls") or []
                             if urls:
                                 login_url = urls[0] or ""
-                        elif isinstance(A, dict):
-                            item_type = item_type or "alias"
-                            login_email = A.get("alias_email") or A.get("email") or ""
+                # An alias's address sits at the item's top level (content.Alias is null).
+                if item_type == "alias":
+                    login_email = it.get("alias_email") or login_email
 
                 if not it.get("id") or not it.get("share_id"):
                     continue

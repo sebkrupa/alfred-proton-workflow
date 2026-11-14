@@ -22,7 +22,7 @@ case "$1" in
     echo '{"vaults":[{"share_id":"s1","name":"Personal"}]}'
     ;;
   item)
-    echo '{"items":[{"id":"item1","share_id":"s1","state":"Active","title":"GitHub","item_type":"login","modify_time":"2026-01-01T00:00:00Z"}]}'
+    echo '{"items":[{"id":"item1","share_id":"s1","state":"Active","title":"GitHub","item_type":"login","modify_time":"2026-01-01T00:00:00Z"},{"id":"-item2","share_id":"s1","state":"Active","modify_time":"2026-01-02T00:00:00Z","alias_email":"shop@alias.test","content":{"title":"Shop alias","content":{"Alias":null}}}]}'
     ;;
   *)
     echo "fake pass-cli: unknown command $*" >&2

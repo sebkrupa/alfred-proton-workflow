@@ -46,11 +46,15 @@ Search items across all your vaults via the `pp` keyword. Each item is matched o
 
 The query is split into space-separated tokens, and every token must match at least one field. So `pp goog work` finds the `google.com` item matched by both its title and your work login, and `pp git personal` narrows a `github.com` entry by account. Single-word queries work exactly as before.
 
-* <kbd>↩</kbd> Copy the password to the clipboard. The clipboard is automatically cleared after 45 seconds.
+* <kbd>↩</kbd> Copy the password (or, for items without one such as an API token, the first secret field) to the clipboard. The clipboard is automatically cleared after 45 seconds.
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy the username/email.
 * <kbd>⌥</kbd><kbd>↩</kbd> Copy the TOTP code.
 * <kbd>⌃</kbd><kbd>↩</kbd> Open the item's first URL in your default browser.
 * <kbd>⇧</kbd><kbd>↩</kbd> Show item details (the password is masked).
+
+Other item types: a credit card copies its number (<kbd>⌘</kbd><kbd>↩</kbd> copies the CVV), Wi-Fi copies its password, an alias copies its address, a custom item copies its first field, and notes, identities and SSH keys show their details. With an empty query, recently copied items are listed first. For 30 seconds after a copy, the copied item stays at the top of any result list it appears in. To get back to it quickly, turn on Alfred → Preferences → Advanced → *Show latest query if within 5 minutes*.
+
+Run `pprefresh` to re-index right away, for example after you add an item.
 
 Generate a fresh random password via the `ppgen` keyword. Pass an optional length (default `20`).
 

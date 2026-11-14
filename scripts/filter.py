@@ -19,6 +19,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 CACHE_DIR = Path(os.environ.get("alfred_workflow_cache") or HERE.parent / "cache")
 CACHE_FILE = CACHE_DIR / "index.json"
+# Item IDs copied from most recently, newest first (written by action.sh).
+RECENT_FILE = CACHE_DIR / "recent.txt"
+# For this many seconds after a copy, the copied item is pinned to the top of
+# any result list it appears in, so reopening Alfred lands on it again.
+_pin = os.environ.get("PP_PIN_SECONDS", "30")
+PIN_SECONDS = int(_pin) if _pin.isdigit() else 30
 TTL = int(os.environ.get("PP_CACHE_TTL", "300"))
 # A cache holding only an error (e.g. "not logged in") is retried after this
 # many seconds rather than the full TTL, so a transient pass-cli failure does
@@ -154,6 +160,53 @@ TYPE_ICONS = {
 }
 
 
+# Per item type: (action, label) for each key. "" is plain ⏎. A key that is
+# missing is shown as not available. Unknown types (e.g. items indexed by the
+# plain fallback listing, which carries no type) get the login set.
+LOGIN_ACTIONS = {
+    "": ("password", "copy password"),
+    "cmd": ("username", "copy username/email"),
+    "alt": ("totp", "copy TOTP code"),
+    "ctrl": ("url", "open first URL"),
+    "shift": ("details", "show full details"),
+}
+DETAILS_ONLY = {"": ("details", "show details"), "shift": ("details", "show details")}
+TYPE_ACTIONS = {
+    "credit-card": {
+        "": ("card", "copy card number"),
+        "cmd": ("cvv", "copy CVV"),
+        "shift": ("details", "show details"),
+    },
+    "wifi": {"": ("password", "copy Wi-Fi password"), "shift": ("details", "show details")},
+    "alias": {"": ("alias", "copy alias address"), "shift": ("details", "show details")},
+    "custom": {"": ("custom", "copy first secret field"), "shift": ("details", "show details")},
+    "note": DETAILS_ONLY,
+    "identity": DETAILS_ONLY,
+    "ssh-key": DETAILS_ONLY,
+}
+MOD_SYMBOLS = {"": "⏎", "cmd": "⌘⏎", "alt": "⌥⏎", "ctrl": "⌃⏎", "shift": "⇧⏎"}
+
+
+def load_recent() -> dict:
+    """Map item ID to its recency rank (0 = most recent)."""
+    try:
+        ids = RECENT_FILE.read_text().split()
+    except OSError:
+        return {}
+    return {iid: i for i, iid in reversed(list(enumerate(ids)))}
+
+
+def pinned_id() -> str:
+    """ID copied within the last PIN_SECONDS, or "" (recent.txt mtime = copy time)."""
+    try:
+        if time.time() - RECENT_FILE.stat().st_mtime > PIN_SECONDS:
+            return ""
+        ids = RECENT_FILE.read_text().split()
+    except OSError:
+        return ""
+    return ids[0] if ids else ""
+
+
 def emit_login_required(message: str) -> None:
     print(json.dumps({
         "items": [{
@@ -189,10 +242,16 @@ def main() -> int:
             continue
         matches.append((s, it))
 
-    # With a query: sort by score desc, then title. Empty query: keep cache
-    # order (most-recently-modified first).
+    # With a query: sort by score desc, then title. Empty query: recently
+    # copied items first, then cache order (most-recently-modified first).
     if tokens:
         matches.sort(key=lambda x: (-x[0], x[1].get("title", "").lower()))
+    else:
+        recent = load_recent()
+        matches.sort(key=lambda x: recent.get(x[1].get("id"), len(recent)))
+    pin = pinned_id()
+    if pin:
+        matches.sort(key=lambda x: x[1].get("id") != pin)  # stable: rest keep order
     matches = matches[:50]
 
     out_items = []
@@ -212,37 +271,25 @@ def main() -> int:
         parts.append(vault)
         subtitle = " · ".join(parts)
 
-        base_arg = f"password|{share_id}|{item_id}|{title}"
+        actions = TYPE_ACTIONS.get(it_type, LOGIN_ACTIONS)
+
+        def entry(key):
+            sym = MOD_SYMBOLS[key]
+            if key not in actions:
+                return {"subtitle": f"{subtitle}  {sym} not available for this item", "valid": False}
+            action, label = actions[key]
+            return {
+                "subtitle": f"{subtitle}  {sym} {label}",
+                "arg": f"{action}|{share_id}|{item_id}|{title}",
+                "valid": True,
+            }
 
         out_items.append({
             "uid": item_id,
             "title": title,
-            "subtitle": f"{subtitle}  ⏎ copy password",
-            "arg": base_arg,
-            "valid": True,
             "match": title.replace(".", " ").replace("-", " ").replace("_", " "),
-            "mods": {
-                "cmd": {
-                    "subtitle": f"{subtitle}  ⌘⏎ copy username/email",
-                    "arg": f"username|{share_id}|{item_id}|{title}",
-                    "valid": True,
-                },
-                "alt": {
-                    "subtitle": f"{subtitle}  ⌥⏎ copy TOTP code",
-                    "arg": f"totp|{share_id}|{item_id}|{title}",
-                    "valid": True,
-                },
-                "shift": {
-                    "subtitle": f"{subtitle}  ⇧⏎ show full details",
-                    "arg": f"details|{share_id}|{item_id}|{title}",
-                    "valid": True,
-                },
-                "ctrl": {
-                    "subtitle": f"{subtitle}  ⌃⏎ open first URL",
-                    "arg": f"url|{share_id}|{item_id}|{title}",
-                    "valid": True,
-                },
-            },
+            **entry(""),
+            "mods": {k: entry(k) for k in ("cmd", "alt", "ctrl", "shift")},
         })
 
     if not out_items:
