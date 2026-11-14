@@ -1,2 +1,181 @@
-# alfred-proton-workflow
+<p align="center">
+  <img src="icon.png" width="128" height="128" alt="Proton Pass for Alfred" />
+</p>
 
+<h1 align="center">alfred-proton-workflow</h1>
+
+<p align="center">
+  An <a href="https://www.alfredapp.com/">Alfred</a> workflow for
+  <a href="https://proton.me/pass">Proton Pass</a>, driving the official
+  <a href="https://protonpass.github.io/pass-cli/"><code>pass-cli</code></a>.
+</p>
+
+<p align="center">
+  <a href="https://github.com/sebkrupa/alfred-proton-workflow/releases/latest">
+    <img alt="latest release" src="https://img.shields.io/github/v/release/sebkrupa/alfred-proton-workflow?color=6c4ff7&label=download&style=for-the-badge" />
+  </a>
+  &nbsp;
+  <a href="LICENSE">
+    <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-6c4ff7?style=for-the-badge" />
+  </a>
+</p>
+
+---
+
+Hardened fork of [`jagajaga/alfred-proton-pass`](https://github.com/jagajaga/alfred-proton-pass) (v0.2.7) — see [Hardened fork](#hardened-fork).
+
+UX modeled after [`chrisgrieser/alfred-pass`](https://github.com/chrisgrieser/alfred-pass) — same keyword + modifier-key feel, ported to the Proton Pass backend.
+
+## Install
+
+1. Install the Proton Pass CLI and sign in:
+
+   ```sh
+   brew install proton-pass-cli
+   pass-cli login
+   ```
+
+2. Build **Proton Pass (safe).alfredworkflow** (see [Building from source](#building-from-source)) and double-click it.
+
+### Staying logged in
+
+The default `pass-cli login` (web) session is short-lived and eventually
+expires — when it does, the workflow shows a *"not logged in"* item instead of
+results. For a session that lasts as long as you want (up to a year),
+authenticate with a **Personal Access Token (PAT)**.
+
+> A fresh PAT has **no vault access** until you grant it, and PATs can only be
+> created/granted from a normal (non-PAT) session. Run this whole block while
+> logged in normally — it creates the token, grants it, logs in with it, and
+> wipes the value, all without printing it.
+
+```sh
+# 0. be on a normal session (NOT a --pat one)
+pass-cli login            # or: pass-cli login --interactive
+
+# 1. create the token and capture it into a variable (never printed).
+#    pick any lifetime: 1d 1w 1m 3m 6m 1y
+TOKEN=$(pass-cli personal-access-token create --name alfred --expiration 1y --output json \
+  | python3 -c 'import json,sys
+def find(o):
+    if isinstance(o,str): return o if o.startswith("pst_") else None
+    if isinstance(o,(list,dict)):
+        for v in (o.values() if isinstance(o,dict) else o):
+            r=find(v)
+            if r: return r
+print(find(json.load(sys.stdin)) or "")')
+[ -n "$TOKEN" ] && echo "token captured" || echo "FAILED to capture token"
+
+# 2. grant it read access to every vault (covers multiple / same-named vaults)
+for sid in $(pass-cli vault list --output json \
+      | python3 -c 'import json,sys;[print(v["share_id"]) for v in json.load(sys.stdin)["vaults"]]'); do
+  pass-cli personal-access-token access grant \
+    --personal-access-token-name alfred --share-id "$sid" --role viewer
+done
+
+# 3. switch to the long-lived PAT session, then wipe the variable
+pass-cli logout
+pass-cli login --pat "$TOKEN"
+unset TOKEN
+
+# 4. verify it can see your vaults (should print a number > 0)
+pass-cli vault list --output json \
+  | python3 -c 'import json,sys;print(len(json.load(sys.stdin)["vaults"]),"vaults visible")'
+```
+
+**Notes**
+
+- Different lifetime? Swap `1y` in step 1 for `1d`, `1w`, `1m`, `3m`, or `6m`.
+- **Any vault you create later** won't be visible until you re-run step 2 for it.
+- Renew before it lapses with `pass-cli personal-access-token renew`.
+- Use a unique `--name`; grant/login by name is ambiguous if two tokens share
+  one. List with `pass-cli personal-access-token list` and remove extras with
+  `pass-cli personal-access-token delete --personal-access-token-id <id>`.
+- Treat the token like a password — don't store it in the workflow. The session
+  is cached under `~/.config/pass-cli/.session/`.
+
+## Usage
+
+| Keyword | What it does |
+|---|---|
+| `pp <query>` | Search items across all your vaults (matches title and login) |
+| `ppgen [length]` | Generate a random password (default length 20) and copy |
+
+Inside the `pp` results:
+
+| Key | Action |
+|---|---|
+| <kbd>↩</kbd> | Copy **password** (clipboard auto-clears after 45 s) |
+| <kbd>⌘</kbd><kbd>↩</kbd> | Copy **username/email** |
+| <kbd>⌥</kbd><kbd>↩</kbd> | Copy **TOTP code** |
+| <kbd>⌃</kbd><kbd>↩</kbd> | Open the item's first **URL** |
+| <kbd>⇧</kbd><kbd>↩</kbd> | Show item **details** (password masked) |
+
+### Search
+
+Each item is matched on its **title**, **login** (username/email), and **URL**.
+
+The query is split into space-separated tokens, and **every token must match
+at least one field**. That lets you narrow by combining a site with an
+account — e.g. `pp goog work` matches the `google.com` entry by title and
+your work address by login, and `pp git personal` picks the `github.com`
+entry tied to that account. Tokens that land on different fields rank higher,
+so the entry matching both your terms floats to the top.
+
+Per token, matches are scored exact → prefix → word-boundary → substring →
+subsequence (so `ghb` still finds `github.com`). Title hits outrank login
+hits, which outrank URL hits.
+
+## Configuration
+
+Workflow variables (Alfred → Workflows → Proton Pass → `[𝗑]`):
+
+- `PP_CACHE_TTL` — seconds before the item index is re-fetched (default `300`).
+  Refresh runs in the background; only the very first query after install blocks on it.
+- `PP_ERROR_CACHE_TTL` — seconds before a failed index (e.g. *not logged in*) is
+  retried (default `10`), so a momentary pass-cli hiccup doesn't stick for the full TTL.
+- `PP_LIST_TIMEOUT` — seconds allowed per vault when listing items (default `60`).
+  Large vaults can be slow to enrich with usernames; if a vault exceeds this, the
+  workflow falls back to a fast title-only listing for it rather than dropping it.
+- `PP_CLIP_CLEAR` — seconds before the workflow clears the clipboard
+  (default `45`; `0` disables). Clearing only happens if the clipboard still
+  holds the value the workflow put there.
+
+### Hardened fork
+
+This copy removes the self-updater (no network access at all), passes text to
+AppleScript as arguments (no injection via item titles/notes), opens only
+`http(s)` URLs, marks copied values concealed/transient and this-Mac-only
+(skipped by clipboard managers and Universal Clipboard), hides notes in the
+details view, and keeps the cache readable by your user only.
+
+## How it works
+
+1. `scripts/index.sh` calls `pass-cli vault list` and then
+   `pass-cli item list --share-id … --output json --show-secrets` for each
+   vault, **strips passwords / TOTP URIs / passkeys**, and merges the results
+   into `cache/index.json`. The cache contains only non-secret metadata
+   (titles, usernames/emails, URLs).
+2. `scripts/filter.py` reads the cache, scores titles + logins against your
+   query, and emits the Alfred Script Filter JSON with modifier-key variants.
+3. `scripts/action.sh` is the dispatcher. It decodes the
+   `ACTION|SHARE_ID|ITEM_ID|TITLE` payload from the chosen item and calls
+   `pass-cli item view --field …` or `pass-cli item totp` to fetch exactly the
+   value being copied.
+
+Actual secrets are **never** written to disk by this workflow — every
+copy / TOTP / open-URL action fetches the value live from `pass-cli`.
+
+## Building from source
+
+```sh
+zip -r "Proton Pass (safe).alfredworkflow" \
+  info.plist icon.png INSTRUCTIONS.md scripts/ \
+  -x "*.DS_Store" -x "scripts/__pycache__/*"
+```
+
+Drop the resulting `Proton Pass (safe).alfredworkflow` into Alfred.
+
+## License
+
+[MIT](LICENSE).
