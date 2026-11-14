@@ -36,7 +36,7 @@
 		</array>
 	</dict>
 	<key>createdby</key>
-	<string>jagajaga</string>
+	<string>Sebastian Krupa</string>
 	<key>description</key>
 	<string>Search Proton Pass items, copy passwords/usernames/TOTP, generate passwords — via the official pass-cli.</string>
 	<key>disabled</key>
@@ -230,6 +230,6 @@ Workflow variables:
 	<key>version</key>
 	<string>0.2.7-safe</string>
 	<key>webaddress</key>
-	<string></string>
+	<string>https://github.com/sebkrupa/alfred-proton-workflow</string>
 </dict>
 </plist>
