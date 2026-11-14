@@ -48,11 +48,39 @@ SH
     ;;
 
   password)
-    if value="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --field password 2>&1)"; then
+    # Login items: the password field. Anything else (API token, custom item):
+    # fall back to the first secret field, see first_secret below.
+    if value="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --field password 2>/dev/null)" && [[ -n "$value" ]]; then
       copy_transient "$value"
       notify "Proton Pass" "Password for $title copied (clears in ${CLIP_CLEAR_SECONDS}s)"
+    elif json="$(pass-cli item view --share-id "$share_id" --item-id "$item_id" --output json 2>&1)"; then
+      # Script via -c, JSON via stdin. Prints "<field name>\n<value>" or nothing.
+      secret="$(printf '%s' "$json" | /usr/bin/python3 -I -c '
+import json, sys
+try:
+    c = json.load(sys.stdin)["item"]["content"]
+    fields = []
+    for sec in (c.get("content", {}).get("Custom", {}) or {}).get("sections", []):
+        fields += sec.get("section_fields", [])
+    fields += c.get("extra_fields", [])
+    # Hidden fields are the real secrets; plain text is the fallback.
+    for kind in ("Hidden", "Text"):
+        for f in fields:
+            v = (f.get("content") or {}).get(kind)
+            if v:
+                print(f.get("name", "")); print(v); sys.exit()
+except Exception:
+    pass
+')" || secret=""
+      if [[ -n "$secret" ]]; then
+        field_name="${secret%%$'\n'*}"
+        copy_transient "${secret#*$'\n'}"
+        notify "Proton Pass" "${field_name:-Secret} of $title copied (clears in ${CLIP_CLEAR_SECONDS}s)"
+      else
+        notify "Proton Pass" "No password or secret field on $title"
+      fi
     else
-      notify "Proton Pass" "Could not read password: $value"
+      notify "Proton Pass" "Could not read item: $json"
     fi
     ;;
 

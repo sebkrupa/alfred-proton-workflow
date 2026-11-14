@@ -105,7 +105,7 @@ Inside the `pp` results:
 
 | Key | Action |
 |---|---|
-| <kbd>↩</kbd> | Copy **password** (clipboard auto-clears after 45 s) |
+| <kbd>↩</kbd> | Copy **password**, or the first secret field if there is none (clipboard auto-clears after 45 s) |
 | <kbd>⌘</kbd><kbd>↩</kbd> | Copy **username/email** |
 | <kbd>⌥</kbd><kbd>↩</kbd> | Copy **TOTP code** |
 | <kbd>⌃</kbd><kbd>↩</kbd> | Open the item's first **URL** |

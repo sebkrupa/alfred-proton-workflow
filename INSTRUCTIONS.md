@@ -46,7 +46,7 @@ Search items across all your vaults via the `pp` keyword. Each item is matched o
 
 The query is split into space-separated tokens, and every token must match at least one field. So `pp goog work` finds the `google.com` item matched by both its title and your work login, and `pp git personal` narrows a `github.com` entry by account. Single-word queries work exactly as before.
 
-* <kbd>↩</kbd> Copy the password to the clipboard. The clipboard is automatically cleared after 45 seconds.
+* <kbd>↩</kbd> Copy the password (or, for items without one such as an API token, the first secret field) to the clipboard. The clipboard is automatically cleared after 45 seconds.
 * <kbd>⌘</kbd><kbd>↩</kbd> Copy the username/email.
 * <kbd>⌥</kbd><kbd>↩</kbd> Copy the TOTP code.
 * <kbd>⌃</kbd><kbd>↩</kbd> Open the item's first URL in your default browser.
